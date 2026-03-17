@@ -89,6 +89,7 @@ async function fetchPublishedPosts() {
             sentAt
             channel {
               descriptor
+              service
               postingGoal {
                 goal
                 sentCount
@@ -129,19 +130,20 @@ async function fetchScheduledPosts(startDate, endDate) {
             status
             channel {
               descriptor
+              service
             }
           }
         }
       }
     }
   `;
-  
+
   const data = await bufferGraphQL(query, {
     orgId: BUFFER_ORG_ID,
     start: startDate,
     end: endDate
   });
-  
+
   return data.posts.edges.map(edge => edge.node);
 }
 
@@ -310,9 +312,17 @@ async function main() {
     // Fetch scheduled posts for next week
     const queueNextWeek = await fetchScheduledPosts(nextWeekStart, nextWeekEnd);
     console.log(`Found ${queueNextWeek.length} posts in queue for next week`);
-    
+
+    // Filter by allowed channels
+    const filterByChannel = posts =>
+      posts.filter(p => CONFIG.ALLOWED_CHANNELS.includes(p.channel.service));
+
+    const filteredSentThisWeek = filterByChannel(sentThisWeek);
+    const filteredQueueThisWeek = filterByChannel(queueThisWeek);
+    const filteredQueueNextWeek = filterByChannel(queueNextWeek);
+
     // Build and send message
-    const message = buildSlackMessage(sentThisWeek, queueThisWeek, queueNextWeek);
+    const message = buildSlackMessage(filteredSentThisWeek, filteredQueueThisWeek, filteredQueueNextWeek);
     console.log('\n--- Message to send ---\n');
     console.log(message);
     console.log('\n--- End message ---\n');

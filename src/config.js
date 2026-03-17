@@ -20,5 +20,8 @@ export const CONFIG = {
   },
   
   // Slack message
-  CREATE_SPACE_URL: 'https://publish.buffer.com/create/ideas?view=board'
+  CREATE_SPACE_URL: 'https://publish.buffer.com/create/ideas?view=board',
+
+  // Allowed channels to include in report (e.g. ['linkedin', 'threads'])
+  ALLOWED_CHANNELS: ['linkedin']
 };
