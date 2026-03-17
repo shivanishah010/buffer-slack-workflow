@@ -24,6 +24,10 @@ function getWeekBoundaries() {
   thisWeekEnd.setDate(thisWeekEnd.getDate() + 6);
   thisWeekEnd.setHours(23, 59, 59, 999);
   
+  // Rest of this week: now to Sunday 23:59
+  const restOfWeekStart = new Date(nowIST);
+  const restOfWeekEnd = new Date(thisWeekEnd);
+  
   // Next week: Monday 00:00 to Sunday 23:59
   const nextWeekStart = new Date(thisWeekStart);
   nextWeekStart.setDate(nextWeekStart.getDate() + 7);
@@ -35,6 +39,8 @@ function getWeekBoundaries() {
   return {
     thisWeekStart: thisWeekStart.toISOString(),
     thisWeekEnd: thisWeekEnd.toISOString(),
+    restOfWeekStart: restOfWeekStart.toISOString(),
+    restOfWeekEnd: restOfWeekEnd.toISOString(),
     nextWeekStart: nextWeekStart.toISOString(),
     nextWeekEnd: nextWeekEnd.toISOString()
   };
@@ -94,8 +100,8 @@ async function fetchPublishedPosts() {
   return data.posts.edges.map(edge => edge.node);
 }
 
-// Fetch scheduled posts for next week
-async function fetchScheduledPosts(nextWeekStart, nextWeekEnd) {
+// Fetch scheduled posts for a date range
+async function fetchScheduledPosts(startDate, endDate) {
   const query = `
     query GetScheduledPosts($orgId: OrganizationId!, $start: DateTime!, $end: DateTime!) {
       posts(
@@ -126,8 +132,8 @@ async function fetchScheduledPosts(nextWeekStart, nextWeekEnd) {
   
   const data = await bufferGraphQL(query, {
     orgId: BUFFER_ORG_ID,
-    start: nextWeekStart,
-    end: nextWeekEnd
+    start: startDate,
+    end: endDate
   });
   
   return data.posts.edges.map(edge => edge.node);
@@ -174,46 +180,69 @@ function groupByPlatform(posts) {
 }
 
 // Build Slack message
-function buildSlackMessage(thisWeekPosts, nextWeekPosts) {
+function buildSlackMessage(sentThisWeek, queueThisWeek, queueNextWeek) {
   let message = '';
   
-  // This week section
-  if (thisWeekPosts.length === 0) {
+  // Section 1: Posts sent this week
+  if (sentThisWeek.length === 0) {
     message += "Hi Shivani! You haven't posted anything this week 😔\n\n";
   } else {
     message += "Hi Shivani! Here's what your social media posting looked like this week.\n\n";
     
-    const groupedThisWeek = groupByPlatform(thisWeekPosts);
+    const groupedSent = groupByPlatform(sentThisWeek);
     
-    Object.keys(groupedThisWeek).forEach(platform => {
-      message += `**${platform}**\n`;
+    Object.keys(groupedSent).forEach(platform => {
+      message += `*${platform}*\n`;
       
-      groupedThisWeek[platform].forEach(post => {
+      groupedSent[platform].forEach(post => {
         const dateStr = formatDate(post.sentAt);
         const textStr = truncateText(post.text);
-        message += `${dateStr}: ${textStr}\n`;
+        const postUrl = `https://publish.buffer.com/calendar/post/${post.id}`;
+        message += `*<${postUrl}|${dateStr}>:* ${textStr}\n`;
       });
       
       message += '\n';
     });
   }
   
-  // Next week section
-  if (nextWeekPosts.length === 0) {
+  // Section 2: Posts in queue for rest of this week
+  if (queueThisWeek.length > 0) {
+    message += "Here's what's in queue for this week:\n\n";
+    
+    const groupedThisWeek = groupByPlatform(queueThisWeek);
+    
+    Object.keys(groupedThisWeek).forEach(platform => {
+      message += `*${platform}*\n`;
+      
+      groupedThisWeek[platform].forEach(post => {
+        const dateStr = formatDate(post.dueAt);
+        const statusSuffix = post.status === 'sending' ? ' (scheduled)' : '';
+        const textStr = truncateText(post.text);
+        const postUrl = `https://publish.buffer.com/calendar/post/${post.id}`;
+        message += `*<${postUrl}|${dateStr}>${statusSuffix}:* ${textStr}\n`;
+      });
+      
+      message += '\n';
+    });
+  }
+  
+  // Section 3: Posts in queue for next week
+  if (queueNextWeek.length === 0) {
     message += `Your queue for next week is empty right now. Head over to your <${CONFIG.CREATE_SPACE_URL}|Create Space> for inspiration ✨\n`;
   } else {
     message += "Here's what's in queue for next week:\n\n";
     
-    const groupedNextWeek = groupByPlatform(nextWeekPosts);
+    const groupedNextWeek = groupByPlatform(queueNextWeek);
     
     Object.keys(groupedNextWeek).forEach(platform => {
-      message += `**${platform}**\n`;
+      message += `*${platform}*\n`;
       
       groupedNextWeek[platform].forEach(post => {
         const dateStr = formatDate(post.dueAt);
         const statusSuffix = post.status === 'sending' ? ' (scheduled)' : '';
         const textStr = truncateText(post.text);
-        message += `${dateStr}${statusSuffix}: ${textStr}\n`;
+        const postUrl = `https://publish.buffer.com/calendar/post/${post.id}`;
+        message += `*<${postUrl}|${dateStr}>${statusSuffix}:* ${textStr}\n`;
       });
       
       message += '\n';
@@ -243,9 +272,10 @@ async function main() {
   try {
     console.log('Fetching Buffer posts...');
     
-    const { thisWeekStart, thisWeekEnd, nextWeekStart, nextWeekEnd } = getWeekBoundaries();
+    const { thisWeekStart, thisWeekEnd, restOfWeekStart, restOfWeekEnd, nextWeekStart, nextWeekEnd } = getWeekBoundaries();
     
-    console.log('This week:', thisWeekStart, 'to', thisWeekEnd);
+    console.log('This week (full):', thisWeekStart, 'to', thisWeekEnd);
+    console.log('Rest of this week:', restOfWeekStart, 'to', restOfWeekEnd);
     console.log('Next week:', nextWeekStart, 'to', nextWeekEnd);
     
     // Fetch published posts (last 20)
@@ -253,20 +283,24 @@ async function main() {
     console.log(`Fetched ${allPublishedPosts.length} published posts`);
     
     // Filter by sentAt for this week
-    const thisWeekPosts = allPublishedPosts.filter(post => {
+    const sentThisWeek = allPublishedPosts.filter(post => {
       if (!post.sentAt) return false;
       const sentAt = new Date(post.sentAt);
       return sentAt >= new Date(thisWeekStart) && sentAt <= new Date(thisWeekEnd);
     });
     
-    console.log(`Found ${thisWeekPosts.length} posts published this week`);
+    console.log(`Found ${sentThisWeek.length} posts sent this week`);
+    
+    // Fetch scheduled posts for rest of this week
+    const queueThisWeek = await fetchScheduledPosts(restOfWeekStart, restOfWeekEnd);
+    console.log(`Found ${queueThisWeek.length} posts in queue for rest of this week`);
     
     // Fetch scheduled posts for next week
-    const nextWeekPosts = await fetchScheduledPosts(nextWeekStart, nextWeekEnd);
-    console.log(`Found ${nextWeekPosts.length} posts scheduled for next week`);
+    const queueNextWeek = await fetchScheduledPosts(nextWeekStart, nextWeekEnd);
+    console.log(`Found ${queueNextWeek.length} posts in queue for next week`);
     
     // Build and send message
-    const message = buildSlackMessage(thisWeekPosts, nextWeekPosts);
+    const message = buildSlackMessage(sentThisWeek, queueThisWeek, queueNextWeek);
     console.log('\n--- Message to send ---\n');
     console.log(message);
     console.log('\n--- End message ---\n');
