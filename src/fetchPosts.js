@@ -222,12 +222,12 @@ function buildSlackMessage(sentThisWeek, queueThisWeek, queueNextWeek) {
   // Section 2: Posts in queue for rest of this week
   if (queueThisWeek.length > 0) {
     message += "*Here's what's in queue for this week:*\n\n";
-    
+
     const groupedThisWeek = groupByPlatform(queueThisWeek);
-    
+
     Object.keys(groupedThisWeek).forEach(platform => {
       message += `*${platform}*\n`;
-      
+
       groupedThisWeek[platform].forEach(post => {
         const dateStr = formatDate(post.dueAt);
         const statusSuffix = post.status === 'sending' ? ' (scheduled)' : '';
@@ -235,11 +235,16 @@ function buildSlackMessage(sentThisWeek, queueThisWeek, queueNextWeek) {
         const postUrl = `https://publish.buffer.com/calendar/post/${post.id}`;
         message += `*<${postUrl}|${dateStr}${statusSuffix}>:* ${textStr}\n`;
       });
-      
+
       message += '\n';
     });
   }
-  
+
+  // Add separator if we have either queue for this week OR posted this week
+  if ((sentThisWeek.length > 0 || queueThisWeek.length > 0) && queueNextWeek.length > 0) {
+    message += '─'.repeat(40) + '\n\n';
+  }
+
   // Section 3: Posts in queue for next week
   if (queueNextWeek.length === 0) {
     message += `Your queue for next week is empty right now. Head over to your <${CONFIG.CREATE_SPACE_URL}|Create Space> for inspiration ✨\n`;
