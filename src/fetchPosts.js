@@ -200,7 +200,7 @@ function buildSlackMessage(thisWeekPosts, nextWeekPosts) {
   
   // Next week section
   if (nextWeekPosts.length === 0) {
-    message += `Your queue for next week is empty right now. Head over to your [Create Space](${CONFIG.CREATE_SPACE_URL}) for inspiration ✨\n`;
+    message += `Your queue for next week is empty right now. Head over to your <${CONFIG.CREATE_SPACE_URL}|Create Space> for inspiration ✨\n`;
   } else {
     message += "Here's what's in queue for next week:\n\n";
     
