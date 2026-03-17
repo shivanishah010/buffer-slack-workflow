@@ -1,0 +1,18 @@
+{
+  "name": "buffer-slack-workflow",
+  "version": "1.0.0",
+  "description": "Weekly Buffer social media summary sent to Slack",
+  "type": "module",
+  "main": "src/fetchPosts.js",
+  "scripts": {
+    "get-org-id": "node src/getOrganizationId.js",
+    "test": "node src/fetchPosts.js"
+  },
+  "keywords": ["buffer", "slack", "automation"],
+  "author": "Shivani Shah",
+  "license": "MIT",
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "node-fetch": "^3.3.2"
+  }
+}
