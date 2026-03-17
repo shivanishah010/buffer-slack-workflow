@@ -25,7 +25,7 @@ function getWeekBoundaries() {
   thisWeekEnd.setHours(23, 59, 59, 999);
   
   // Rest of this week: now to Sunday 23:59
-  const restOfWeekStart = new Date(nowIST);
+  const restOfWeekStart = new Date(now);
   const restOfWeekEnd = new Date(thisWeekEnd);
   
   // Next week: Monday 00:00 to Sunday 23:59
@@ -219,7 +219,7 @@ function buildSlackMessage(sentThisWeek, queueThisWeek, queueNextWeek) {
         const statusSuffix = post.status === 'sending' ? ' (scheduled)' : '';
         const textStr = truncateText(post.text);
         const postUrl = `https://publish.buffer.com/calendar/post/${post.id}`;
-        message += `*<${postUrl}|${dateStr}>${statusSuffix}:* ${textStr}\n`;
+        message += `*<${postUrl}|${dateStr}${statusSuffix}>:* ${textStr}\n`;
       });
       
       message += '\n';
@@ -242,7 +242,7 @@ function buildSlackMessage(sentThisWeek, queueThisWeek, queueNextWeek) {
         const statusSuffix = post.status === 'sending' ? ' (scheduled)' : '';
         const textStr = truncateText(post.text);
         const postUrl = `https://publish.buffer.com/calendar/post/${post.id}`;
-        message += `*<${postUrl}|${dateStr}>${statusSuffix}:* ${textStr}\n`;
+        message += `*<${postUrl}|${dateStr}${statusSuffix}>:* ${textStr}\n`;
       });
       
       message += '\n';
