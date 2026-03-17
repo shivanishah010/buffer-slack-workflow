@@ -240,8 +240,8 @@ function buildSlackMessage(sentThisWeek, queueThisWeek, queueNextWeek) {
     });
   }
 
-  // Add separator if we have either queue for this week OR posted this week
-  if ((sentThisWeek.length > 0 || queueThisWeek.length > 0) && queueNextWeek.length > 0) {
+  // Add separator if we have content above (posted or queued this week)
+  if (sentThisWeek.length > 0 || queueThisWeek.length > 0) {
     message += '─'.repeat(40) + '\n\n';
   }
 
