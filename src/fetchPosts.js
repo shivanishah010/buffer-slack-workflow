@@ -1,128 +1,47 @@
-// Main script to fetch Buffer posts and send weekly summary to Slack
-
-import dotenv from 'dotenv';
+import 'dotenv/config';
 import fetch from 'node-fetch';
 import { CONFIG } from './config.js';
 
-dotenv.config();
-
 const BUFFER_API_TOKEN = process.env.BUFFER_API_TOKEN;
-const BUFFER_ORG_ID = '5aebdfa719520549010a5230';
+const BUFFER_ORG_ID = process.env.BUFFER_ORG_ID;
 const SLACK_WEBHOOK_URL = process.env.SLACK_WEBHOOK_URL;
 
-// Validate environment variables
-if (!BUFFER_API_TOKEN) {
-  console.error('Error: BUFFER_API_TOKEN not found');
-  process.exit(1);
-}
-
-if (!SLACK_WEBHOOK_URL) {
-  console.error('Error: SLACK_WEBHOOK_URL not found');
-  process.exit(1);
-}
-
-// Get current date/time in IST
-function getISTDate() {
-  return new Date(new Date().toLocaleString('en-US', { timeZone: CONFIG.TIMEZONE }));
-}
-
-// Get Monday 00:00 IST of the current week
-function getThisWeekStart() {
-  const now = getISTDate();
-  const day = now.getDay();
-  const diff = day === 0 ? -6 : 1 - day; // If Sunday, go back 6 days; otherwise go to Monday
-  const monday = new Date(now);
-  monday.setDate(now.getDate() + diff);
-  monday.setHours(0, 0, 0, 0);
-  return monday;
-}
-
-// Get Sunday 23:59 IST of the current week
-function getThisWeekEnd() {
-  const start = getThisWeekStart();
-  const sunday = new Date(start);
-  sunday.setDate(start.getDate() + 6);
-  sunday.setHours(23, 59, 59, 999);
-  return sunday;
-}
-
-// Get Monday 00:00 IST of next week
-function getNextWeekStart() {
-  const thisWeekEnd = getThisWeekEnd();
-  const nextMonday = new Date(thisWeekEnd);
-  nextMonday.setDate(thisWeekEnd.getDate() + 1);
-  nextMonday.setHours(0, 0, 0, 0);
-  return nextMonday;
-}
-
-// Get Sunday 23:59 IST of next week
-function getNextWeekEnd() {
-  const nextWeekStart = getNextWeekStart();
-  const nextSunday = new Date(nextWeekStart);
-  nextSunday.setDate(nextWeekStart.getDate() + 6);
-  nextSunday.setHours(23, 59, 59, 999);
-  return nextSunday;
-}
-
-// Convert IST date to ISO 8601 UTC string for Buffer API
-function toUTC(istDate) {
-  return istDate.toISOString();
-}
-
-// Format date for Slack message: "Monday, Mar 17, 2025:"
-function formatDate(isoString, status) {
-  const date = new Date(isoString);
-  const istDate = new Date(date.toLocaleString('en-US', { timeZone: CONFIG.TIMEZONE }));
+// Helper: Get week boundaries in IST
+function getWeekBoundaries() {
+  const now = new Date();
+  const nowIST = new Date(now.toLocaleString('en-US', { timeZone: CONFIG.TIMEZONE }));
   
-  const formatted = istDate.toLocaleDateString('en-US', CONFIG.DATE_FORMAT);
-  const statusSuffix = status === 'sending' ? ' (scheduled)' : '';
+  // Get current day of week (0 = Sunday, 1 = Monday, etc.)
+  const currentDay = nowIST.getDay();
+  const daysSinceMonday = (currentDay + 6) % 7; // Convert to Monday = 0
   
-  return `${formatted}${statusSuffix}:`;
-}
-
-// Truncate post text to 100 characters
-function truncateText(text) {
-  if (text.length <= CONFIG.POST_TEXT_MAX_LENGTH) {
-    return text;
-  }
-  return text.substring(0, CONFIG.POST_TEXT_MAX_LENGTH) + '...';
-}
-
-// Fetch posts from Buffer GraphQL API
-async function fetchBufferPosts(startDate, endDate, status) {
-  const query = `
-    query GetPosts($organizationId: OrganizationId!, $startDate: DateTime!, $endDate: DateTime!, $status: [PostStatus!]!) {
-      posts(
-        input: {
-          organizationId: $organizationId
-          filter: {
-            status: $status
-            ${status.includes('sent') ? 'sentAt' : 'dueAt'}: { start: $startDate, end: $endDate }
-          }
-          sort: [{ field: ${status.includes('sent') ? 'sentAt' : 'dueAt'}, direction: asc }]
-        }
-      ) {
-        edges {
-          node {
-            text
-            ${status.includes('sent') ? 'sentAt' : 'dueAt'}
-            ${status.includes('scheduled') || status.includes('sending') ? 'status' : ''}
-            channel {
-              descriptor
-            }
-          }
-        }
-      }
-    }
-  `;
-
-  const variables = {
-    organizationId: BUFFER_ORG_ID,
-    startDate: toUTC(startDate),
-    endDate: toUTC(endDate),
-    status
+  // This week: Monday 00:00 to Sunday 23:59
+  const thisWeekStart = new Date(nowIST);
+  thisWeekStart.setDate(thisWeekStart.getDate() - daysSinceMonday);
+  thisWeekStart.setHours(0, 0, 0, 0);
+  
+  const thisWeekEnd = new Date(thisWeekStart);
+  thisWeekEnd.setDate(thisWeekEnd.getDate() + 6);
+  thisWeekEnd.setHours(23, 59, 59, 999);
+  
+  // Next week: Monday 00:00 to Sunday 23:59
+  const nextWeekStart = new Date(thisWeekStart);
+  nextWeekStart.setDate(nextWeekStart.getDate() + 7);
+  
+  const nextWeekEnd = new Date(nextWeekStart);
+  nextWeekEnd.setDate(nextWeekEnd.getDate() + 6);
+  nextWeekEnd.setHours(23, 59, 59, 999);
+  
+  return {
+    thisWeekStart: thisWeekStart.toISOString(),
+    thisWeekEnd: thisWeekEnd.toISOString(),
+    nextWeekStart: nextWeekStart.toISOString(),
+    nextWeekEnd: nextWeekEnd.toISOString()
   };
+}
 
+// Helper: Make GraphQL request to Buffer
+async function bufferGraphQL(query, variables = {}) {
   const response = await fetch(CONFIG.BUFFER_API_URL, {
     method: 'POST',
     headers: {
@@ -131,19 +50,107 @@ async function fetchBufferPosts(startDate, endDate, status) {
     },
     body: JSON.stringify({ query, variables })
   });
-
-  const data = await response.json();
-
-  if (data.errors) {
-    console.error('GraphQL errors:', JSON.stringify(data.errors, null, 2));
-    throw new Error('Failed to fetch posts from Buffer');
+  
+  if (!response.ok) {
+    throw new Error(`Buffer API error: ${response.status} ${response.statusText}`);
   }
+  
+  const data = await response.json();
+  
+  if (data.errors) {
+    throw new Error(`GraphQL errors: ${JSON.stringify(data.errors)}`);
+  }
+  
+  return data.data;
+}
 
-  return data.data.posts.edges.map(edge => edge.node);
+// Fetch published posts (last 20, will filter client-side by sentAt)
+async function fetchPublishedPosts() {
+  const query = `
+    query GetPublishedPosts($orgId: OrganizationId!) {
+      posts(
+        input: {
+          organizationId: $orgId
+          filter: { status: [sent] }
+          sort: [{ field: createdAt, direction: desc }]
+        }
+        first: 20
+      ) {
+        edges {
+          node {
+            id
+            text
+            sentAt
+            channel {
+              descriptor
+            }
+          }
+        }
+      }
+    }
+  `;
+  
+  const data = await bufferGraphQL(query, { orgId: BUFFER_ORG_ID });
+  return data.posts.edges.map(edge => edge.node);
+}
+
+// Fetch scheduled posts for next week
+async function fetchScheduledPosts(nextWeekStart, nextWeekEnd) {
+  const query = `
+    query GetScheduledPosts($orgId: OrganizationId!, $start: DateTime!, $end: DateTime!) {
+      posts(
+        input: {
+          organizationId: $orgId
+          filter: {
+            status: [scheduled, sending]
+            dueAt: { start: $start, end: $end }
+          }
+          sort: [{ field: dueAt, direction: asc }]
+        }
+        first: 100
+      ) {
+        edges {
+          node {
+            id
+            text
+            dueAt
+            status
+            channel {
+              descriptor
+            }
+          }
+        }
+      }
+    }
+  `;
+  
+  const data = await bufferGraphQL(query, {
+    orgId: BUFFER_ORG_ID,
+    start: nextWeekStart,
+    end: nextWeekEnd
+  });
+  
+  return data.posts.edges.map(edge => edge.node);
+}
+
+// Format date as "Monday, Mar 17, 2025"
+function formatDate(dateString) {
+  const date = new Date(dateString);
+  const dateIST = new Date(date.toLocaleString('en-US', { timeZone: CONFIG.TIMEZONE }));
+  
+  return dateIST.toLocaleDateString('en-US', CONFIG.DATE_FORMAT);
+}
+
+// Truncate post text to max length
+function truncateText(text) {
+  if (text.length <= CONFIG.POST_TEXT_MAX_LENGTH) {
+    return text;
+  }
+  return text.substring(0, CONFIG.POST_TEXT_MAX_LENGTH) + '...';
 }
 
 // Group posts by platform
-function groupByPlatform(posts, isScheduled) {
+function groupByPlatform(posts) {
   const grouped = {};
   
   posts.forEach(post => {
@@ -151,51 +158,66 @@ function groupByPlatform(posts, isScheduled) {
     if (!grouped[platform]) {
       grouped[platform] = [];
     }
-    
-    const dateField = isScheduled ? 'dueAt' : 'sentAt';
-    const formattedDate = formatDate(post[dateField], post.status);
-    const truncatedText = truncateText(post.text);
-    
-    grouped[platform].push(`${formattedDate} ${truncatedText}`);
+    grouped[platform].push(post);
+  });
+  
+  // Sort posts within each platform by date (oldest to newest)
+  Object.keys(grouped).forEach(platform => {
+    grouped[platform].sort((a, b) => {
+      const dateA = new Date(a.sentAt || a.dueAt);
+      const dateB = new Date(b.sentAt || b.dueAt);
+      return dateA - dateB;
+    });
   });
   
   return grouped;
 }
 
 // Build Slack message
-function buildSlackMessage(publishedPosts, scheduledPosts) {
-  let message = 'Hi Shivani! ';
+function buildSlackMessage(thisWeekPosts, nextWeekPosts) {
+  let message = '';
   
-  // Handle "this week" section
-  if (publishedPosts.length === 0) {
-    message += "You haven't posted anything this week 😔\n\n";
+  // This week section
+  if (thisWeekPosts.length === 0) {
+    message += "Hi Shivani! You haven't posted anything this week 😔\n\n";
   } else {
-    message += "Here's what your social media posting looked like this week.\n\n";
-    const groupedPublished = groupByPlatform(publishedPosts, false);
+    message += "Hi Shivani! Here's what your social media posting looked like this week.\n\n";
     
-    for (const [platform, posts] of Object.entries(groupedPublished)) {
+    const groupedThisWeek = groupByPlatform(thisWeekPosts);
+    
+    Object.keys(groupedThisWeek).forEach(platform => {
       message += `**${platform}**\n`;
-      posts.forEach(post => {
-        message += `${post}\n`;
+      
+      groupedThisWeek[platform].forEach(post => {
+        const dateStr = formatDate(post.sentAt);
+        const textStr = truncateText(post.text);
+        message += `${dateStr}: ${textStr}\n`;
       });
+      
       message += '\n';
-    }
+    });
   }
   
-  // Handle "next week" section
-  if (scheduledPosts.length === 0) {
-    message += `Your queue for next week is empty right now. Head over to your [Create Space](${CONFIG.CREATE_SPACE_URL}) for inspiration ✨`;
+  // Next week section
+  if (nextWeekPosts.length === 0) {
+    message += `Your queue for next week is empty right now. Head over to your [Create Space](${CONFIG.CREATE_SPACE_URL}) for inspiration ✨\n`;
   } else {
     message += "Here's what's in queue for next week:\n\n";
-    const groupedScheduled = groupByPlatform(scheduledPosts, true);
     
-    for (const [platform, posts] of Object.entries(groupedScheduled)) {
+    const groupedNextWeek = groupByPlatform(nextWeekPosts);
+    
+    Object.keys(groupedNextWeek).forEach(platform => {
       message += `**${platform}**\n`;
-      posts.forEach(post => {
-        message += `${post}\n`;
+      
+      groupedNextWeek[platform].forEach(post => {
+        const dateStr = formatDate(post.dueAt);
+        const statusSuffix = post.status === 'sending' ? ' (scheduled)' : '';
+        const textStr = truncateText(post.text);
+        message += `${dateStr}${statusSuffix}: ${textStr}\n`;
       });
+      
       message += '\n';
-    }
+    });
   }
   
   return message.trim();
@@ -205,46 +227,55 @@ function buildSlackMessage(publishedPosts, scheduledPosts) {
 async function sendToSlack(message) {
   const response = await fetch(SLACK_WEBHOOK_URL, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ text: message })
   });
-
+  
   if (!response.ok) {
-    throw new Error(`Slack webhook failed: ${response.statusText}`);
+    throw new Error(`Slack webhook error: ${response.status} ${response.statusText}`);
   }
+  
+  return response;
 }
 
-// Main execution
+// Main function
 async function main() {
   try {
     console.log('Fetching Buffer posts...');
     
-    // Calculate date ranges
-    const thisWeekStart = getThisWeekStart();
-    const thisWeekEnd = getThisWeekEnd();
-    const nextWeekStart = getNextWeekStart();
-    const nextWeekEnd = getNextWeekEnd();
+    const { thisWeekStart, thisWeekEnd, nextWeekStart, nextWeekEnd } = getWeekBoundaries();
     
-    console.log(`This week: ${thisWeekStart.toISOString()} to ${thisWeekEnd.toISOString()}`);
-    console.log(`Next week: ${nextWeekStart.toISOString()} to ${nextWeekEnd.toISOString()}`);
+    console.log('This week:', thisWeekStart, 'to', thisWeekEnd);
+    console.log('Next week:', nextWeekStart, 'to', nextWeekEnd);
     
-    // Fetch posts
-    const publishedPosts = await fetchBufferPosts(thisWeekStart, thisWeekEnd, ['sent']);
-    const scheduledPosts = await fetchBufferPosts(nextWeekStart, nextWeekEnd, ['scheduled', 'sending']);
+    // Fetch published posts (last 20)
+    const allPublishedPosts = await fetchPublishedPosts();
+    console.log(`Fetched ${allPublishedPosts.length} published posts`);
     
-    console.log(`Found ${publishedPosts.length} published posts and ${scheduledPosts.length} scheduled posts`);
+    // Filter by sentAt for this week
+    const thisWeekPosts = allPublishedPosts.filter(post => {
+      if (!post.sentAt) return false;
+      const sentAt = new Date(post.sentAt);
+      return sentAt >= new Date(thisWeekStart) && sentAt <= new Date(thisWeekEnd);
+    });
+    
+    console.log(`Found ${thisWeekPosts.length} posts published this week`);
+    
+    // Fetch scheduled posts for next week
+    const nextWeekPosts = await fetchScheduledPosts(nextWeekStart, nextWeekEnd);
+    console.log(`Found ${nextWeekPosts.length} posts scheduled for next week`);
     
     // Build and send message
-    const slackMessage = buildSlackMessage(publishedPosts, scheduledPosts);
-    console.log('\nSlack message:\n', slackMessage);
+    const message = buildSlackMessage(thisWeekPosts, nextWeekPosts);
+    console.log('\n--- Message to send ---\n');
+    console.log(message);
+    console.log('\n--- End message ---\n');
     
-    await sendToSlack(slackMessage);
-    console.log('\n✅ Message sent to Slack successfully!');
+    await sendToSlack(message);
+    console.log('✅ Message sent to Slack successfully!');
     
   } catch (error) {
-    console.error('Error:', error.message);
+    console.error('❌ Error:', error.message);
     process.exit(1);
   }
 }
