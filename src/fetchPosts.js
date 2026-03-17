@@ -89,13 +89,19 @@ async function fetchPublishedPosts() {
             sentAt
             channel {
               descriptor
+              postingGoal {
+                goal
+                sentCount
+                scheduledCount
+                status
+              }
             }
           }
         }
       }
     }
   `;
-  
+
   const data = await bufferGraphQL(query, { orgId: BUFFER_ORG_ID });
   return data.posts.edges.map(edge => edge.node);
 }
@@ -193,21 +199,27 @@ function buildSlackMessage(sentThisWeek, queueThisWeek, queueNextWeek) {
     
     Object.keys(groupedSent).forEach(platform => {
       message += `*${platform}*\n`;
-      
+
+      const goal = groupedSent[platform][0].channel.postingGoal;
+      if (goal) {
+        const statusEmoji = { Hit: '✅', OnTrack: '👌', AtRisk: '⚠️' }[goal.status] ?? '';
+        message += `Goal: ${goal.goal} posts/week · Sent: ${goal.sentCount} · Scheduled: ${goal.scheduledCount} · ${goal.status} ${statusEmoji}\n`;
+      }
+
       groupedSent[platform].forEach(post => {
         const dateStr = formatDate(post.sentAt);
         const textStr = truncateText(post.text);
         const postUrl = `https://publish.buffer.com/calendar/post/${post.id}`;
         message += `*<${postUrl}|${dateStr}>:* ${textStr}\n`;
       });
-      
+
       message += '\n';
     });
   }
   
   // Section 2: Posts in queue for rest of this week
   if (queueThisWeek.length > 0) {
-    message += "Here's what's in queue for this week:\n\n";
+    message += "*Here's what's in queue for this week:*\n\n";
     
     const groupedThisWeek = groupByPlatform(queueThisWeek);
     
@@ -230,7 +242,7 @@ function buildSlackMessage(sentThisWeek, queueThisWeek, queueNextWeek) {
   if (queueNextWeek.length === 0) {
     message += `Your queue for next week is empty right now. Head over to your <${CONFIG.CREATE_SPACE_URL}|Create Space> for inspiration ✨\n`;
   } else {
-    message += "Here's what's in queue for next week:\n\n";
+    message += "*Here's what's in queue for next week:*\n\n";
     
     const groupedNextWeek = groupByPlatform(queueNextWeek);
     
