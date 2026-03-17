@@ -228,7 +228,11 @@ async function sendToSlack(message) {
   const response = await fetch(SLACK_WEBHOOK_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text: message })
+    body: JSON.stringify({ 
+      text: message,
+      icon_emoji: ':calendar:',
+      username: 'Buffer Weekly Summary'
+    })
   });
   
   if (!response.ok) {
