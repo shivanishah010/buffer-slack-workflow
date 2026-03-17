@@ -211,7 +211,7 @@ function buildSlackMessage(sentThisWeek, queueThisWeek, queueNextWeek) {
       groupedSent[platform].forEach(post => {
         const dateStr = formatDate(post.sentAt);
         const textStr = truncateText(post.text);
-        const postUrl = `https://publish.buffer.com/calendar/post/${post.id}`;
+        const postUrl = `https://publish.buffer.com/schedule/calendar/month/posts/${post.id}`;
         message += `*<${postUrl}|${dateStr}>:* ${textStr}\n`;
       });
 
@@ -232,7 +232,7 @@ function buildSlackMessage(sentThisWeek, queueThisWeek, queueNextWeek) {
         const dateStr = formatDate(post.dueAt);
         const statusSuffix = post.status === 'sending' ? ' (scheduled)' : '';
         const textStr = truncateText(post.text);
-        const postUrl = `https://publish.buffer.com/calendar/post/${post.id}`;
+        const postUrl = `https://publish.buffer.com/schedule/calendar/month/posts/${post.id}`;
         message += `*<${postUrl}|${dateStr}${statusSuffix}>:* ${textStr}\n`;
       });
 
@@ -260,7 +260,7 @@ function buildSlackMessage(sentThisWeek, queueThisWeek, queueNextWeek) {
         const dateStr = formatDate(post.dueAt);
         const statusSuffix = post.status === 'sending' ? ' (scheduled)' : '';
         const textStr = truncateText(post.text);
-        const postUrl = `https://publish.buffer.com/calendar/post/${post.id}`;
+        const postUrl = `https://publish.buffer.com/schedule/calendar/month/posts/${post.id}`;
         message += `*<${postUrl}|${dateStr}${statusSuffix}>:* ${textStr}\n`;
       });
       
