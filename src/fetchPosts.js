@@ -155,8 +155,16 @@ function formatDate(dateString) {
   return dateIST.toLocaleDateString('en-US', CONFIG.DATE_FORMAT);
 }
 
-// Truncate post text to max length
+// Truncate post text after first sentence
 function truncateText(text) {
+  // Find the first sentence-ending punctuation (. ! ?)
+  const sentenceMatch = text.match(/^(.+?[.!?])/);
+
+  if (sentenceMatch) {
+    return sentenceMatch[1];
+  }
+
+  // Fallback: truncate to max length if no sentence ending found
   if (text.length <= CONFIG.POST_TEXT_MAX_LENGTH) {
     return text;
   }
@@ -193,7 +201,7 @@ function buildSlackMessage(sentThisWeek, queueThisWeek, queueNextWeek) {
         type: 'section',
         text: {
           type: 'mrkdwn',
-          text: `*Goal:* ${goal.goal} posts/week · *Sent:* ${goal.sentCount} · *Scheduled:* ${goal.scheduledCount} · ${goal.status} ${statusEmoji}`
+          text: `*Goal:* ${goal.goal} posts/week · *Sent:* ${goal.sentCount} · *Scheduled:* ${goal.scheduledCount} · *${goal.status}* ${statusEmoji}`
         }
       });
     }
@@ -206,7 +214,7 @@ function buildSlackMessage(sentThisWeek, queueThisWeek, queueNextWeek) {
         type: 'section',
         text: {
           type: 'mrkdwn',
-          text: `*<${postUrl}|${dateStr}>:* ${textStr}`
+          text: `*<${postUrl}|${dateStr}:>* ${textStr}`
         }
       });
     });
@@ -235,7 +243,7 @@ function buildSlackMessage(sentThisWeek, queueThisWeek, queueNextWeek) {
         type: 'section',
         text: {
           type: 'mrkdwn',
-          text: `*<${postUrl}|${dateStr}${statusSuffix}>:* ${textStr}`
+          text: `*<${postUrl}|${dateStr}${statusSuffix}:>* ${textStr}`
         }
       });
     });
@@ -280,7 +288,7 @@ function buildSlackMessage(sentThisWeek, queueThisWeek, queueNextWeek) {
         type: 'section',
         text: {
           type: 'mrkdwn',
-          text: `*<${postUrl}|${dateStr}${statusSuffix}>:* ${textStr}`
+          text: `*<${postUrl}|${dateStr}${statusSuffix}:>* ${textStr}`
         }
       });
     });
