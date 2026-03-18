@@ -213,11 +213,11 @@ function buildSlackMessage(sentThisWeek, queueThisWeek, queueNextWeek) {
   }
 
   // Section 2: Posts in queue for rest of this week
-  if (queueThisWeek.length > 0) {
-    blocks.push({
-      type: 'divider'
-    });
+  blocks.push({
+    type: 'divider'
+  });
 
+  if (queueThisWeek.length > 0) {
     blocks.push({
       type: 'section',
       text: {
@@ -238,6 +238,14 @@ function buildSlackMessage(sentThisWeek, queueThisWeek, queueNextWeek) {
           text: `*<${postUrl}|${dateStr}${statusSuffix}>:* ${textStr}`
         }
       });
+    });
+  } else {
+    blocks.push({
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: "There's nothing scheduled for the rest of this week."
+      }
     });
   }
 
