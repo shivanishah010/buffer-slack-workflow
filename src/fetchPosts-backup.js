@@ -163,136 +163,126 @@ function truncateText(text) {
   return text.substring(0, CONFIG.POST_TEXT_MAX_LENGTH) + '...';
 }
 
+// Group posts by platform
+function groupByPlatform(posts) {
+  const grouped = {};
+  
+  posts.forEach(post => {
+    const platform = post.channel.descriptor;
+    if (!grouped[platform]) {
+      grouped[platform] = [];
+    }
+    grouped[platform].push(post);
+  });
+  
+  // Sort posts within each platform by date (oldest to newest)
+  Object.keys(grouped).forEach(platform => {
+    grouped[platform].sort((a, b) => {
+      const dateA = new Date(a.sentAt || a.dueAt);
+      const dateB = new Date(b.sentAt || b.dueAt);
+      return dateA - dateB;
+    });
+  });
+  
+  return grouped;
+}
 
-// Build Slack message blocks (Block Kit format)
+// Build Slack message
 function buildSlackMessage(sentThisWeek, queueThisWeek, queueNextWeek) {
-  const blocks = [];
-
+  let message = '';
+  
   // Section 1: Posts sent this week
   if (sentThisWeek.length === 0) {
-    blocks.push({
-      type: 'section',
-      text: {
-        type: 'mrkdwn',
-        text: "Hi Shivani! You haven't posted anything on LinkedIn this week 😔"
-      }
-    });
+    message += "Hi Shivani! You haven't posted anything this week 😔\n\n";
   } else {
-    blocks.push({
-      type: 'section',
-      text: {
-        type: 'mrkdwn',
-        text: "Hi Shivani! Here's what you posted on LinkedIn this week."
+    message += "Hi Shivani! Here's what your social media posting looked like this week.\n\n";
+    
+    const groupedSent = groupByPlatform(sentThisWeek);
+    
+    Object.keys(groupedSent).forEach(platform => {
+      message += `*${platform}*\n`;
+
+      const goal = groupedSent[platform][0].channel.postingGoal;
+      if (goal) {
+        const statusEmoji = { Hit: '✅', OnTrack: '👌', AtRisk: '⚠️' }[goal.status] ?? '';
+        message += `Goal: ${goal.goal} posts/week · Sent: ${goal.sentCount} · Scheduled: ${goal.scheduledCount} · ${goal.status} ${statusEmoji}\n`;
       }
+
+      groupedSent[platform].forEach(post => {
+        const dateStr = formatDate(post.sentAt);
+        const textStr = truncateText(post.text);
+        const postUrl = `https://publish.buffer.com/schedule/calendar/month/posts/${post.id}`;
+        message += `*<${postUrl}|${dateStr}>:* ${textStr}\n`;
+      });
+
+      message += '\n';
     });
+  }
+  
+  // Section 2: Posts in queue for rest of this week
+  if (queueThisWeek.length > 0) {
+    message += "*Here's what's in queue for this week:*\n\n";
 
-    const goal = sentThisWeek[0].channel.postingGoal;
-    if (goal) {
-      const statusEmoji = { Hit: '✅', OnTrack: '👌', AtRisk: '⚠️' }[goal.status] ?? '';
-      blocks.push({
-        type: 'section',
-        text: {
-          type: 'mrkdwn',
-          text: `*Goal:* ${goal.goal} posts/week · *Sent:* ${goal.sentCount} · *Scheduled:* ${goal.scheduledCount} · ${goal.status} ${statusEmoji}`
-        }
-      });
-    }
+    const groupedThisWeek = groupByPlatform(queueThisWeek);
 
-    sentThisWeek.forEach(post => {
-      const dateStr = formatDate(post.sentAt);
-      const textStr = truncateText(post.text);
-      const postUrl = `https://publish.buffer.com/schedule/calendar/month/posts/${post.id}`;
-      blocks.push({
-        type: 'section',
-        text: {
-          type: 'mrkdwn',
-          text: `*<${postUrl}|${dateStr}>:* ${textStr}`
-        }
+    Object.keys(groupedThisWeek).forEach(platform => {
+      message += `*${platform}*\n`;
+
+      groupedThisWeek[platform].forEach(post => {
+        const dateStr = formatDate(post.dueAt);
+        const statusSuffix = post.status === 'sending' ? ' (scheduled)' : '';
+        const textStr = truncateText(post.text);
+        const postUrl = `https://publish.buffer.com/schedule/calendar/month/posts/${post.id}`;
+        message += `*<${postUrl}|${dateStr}${statusSuffix}>:* ${textStr}\n`;
       });
+
+      message += '\n';
     });
   }
 
-  // Section 2: Posts in queue for rest of this week
-  if (queueThisWeek.length > 0) {
-    blocks.push({
-      type: 'divider'
-    });
-
-    blocks.push({
-      type: 'section',
-      text: {
-        type: 'mrkdwn',
-        text: "*Here's what's in queue for the rest of this week:*"
-      }
-    });
-
-    queueThisWeek.forEach(post => {
-      const dateStr = formatDate(post.dueAt);
-      const statusSuffix = post.status === 'sending' ? ' (scheduled)' : '';
-      const textStr = truncateText(post.text);
-      const postUrl = `https://publish.buffer.com/schedule/calendar/month/posts/${post.id}`;
-      blocks.push({
-        type: 'section',
-        text: {
-          type: 'mrkdwn',
-          text: `*<${postUrl}|${dateStr}${statusSuffix}>:* ${textStr}`
-        }
-      });
-    });
+  // Add separator if we have content above (posted or queued this week)
+  if (sentThisWeek.length > 0 || queueThisWeek.length > 0) {
+    message += '─'.repeat(40) + '\n\n';
   }
 
   // Section 3: Posts in queue for next week
-  blocks.push({
-    type: 'divider'
-  });
-
   if (queueNextWeek.length === 0) {
-    blocks.push({
-      type: 'section',
-      text: {
-        type: 'mrkdwn',
-        text: `Your queue for next week is empty right now. Head over to your <${CONFIG.CREATE_SPACE_URL}|Create Space> for inspiration ✨`
-      }
-    });
+    message += `Your queue for next week is empty right now. Head over to your <${CONFIG.CREATE_SPACE_URL}|Create Space> for inspiration ✨\n`;
   } else {
-    blocks.push({
-      type: 'section',
-      text: {
-        type: 'mrkdwn',
-        text: "*Here's what's scheduled for next week:*"
-      }
-    });
-
-    queueNextWeek.forEach(post => {
-      const dateStr = formatDate(post.dueAt);
-      const statusSuffix = post.status === 'sending' ? ' (scheduled)' : '';
-      const textStr = truncateText(post.text);
-      const postUrl = `https://publish.buffer.com/schedule/calendar/month/posts/${post.id}`;
-      blocks.push({
-        type: 'section',
-        text: {
-          type: 'mrkdwn',
-          text: `*<${postUrl}|${dateStr}${statusSuffix}>:* ${textStr}`
-        }
+    message += "*Here's what's in queue for next week:*\n\n";
+    
+    const groupedNextWeek = groupByPlatform(queueNextWeek);
+    
+    Object.keys(groupedNextWeek).forEach(platform => {
+      message += `*${platform}*\n`;
+      
+      groupedNextWeek[platform].forEach(post => {
+        const dateStr = formatDate(post.dueAt);
+        const statusSuffix = post.status === 'sending' ? ' (scheduled)' : '';
+        const textStr = truncateText(post.text);
+        const postUrl = `https://publish.buffer.com/schedule/calendar/month/posts/${post.id}`;
+        message += `*<${postUrl}|${dateStr}${statusSuffix}>:* ${textStr}\n`;
       });
+      
+      message += '\n';
     });
   }
-
-  return blocks;
+  
+  return message.trim();
 }
 
 // Send message to Slack
-async function sendToSlack(blocks) {
+async function sendToSlack(message) {
   const response = await fetch(SLACK_WEBHOOK_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ blocks })
+    body: JSON.stringify({ text: message })
   });
-
+  
   if (!response.ok) {
     throw new Error(`Slack webhook error: ${response.status} ${response.statusText}`);
   }
-
+  
   return response;
 }
 
@@ -337,12 +327,12 @@ async function main() {
     const filteredQueueNextWeek = filterByChannel(queueNextWeek);
 
     // Build and send message
-    const blocks = buildSlackMessage(filteredSentThisWeek, filteredQueueThisWeek, filteredQueueNextWeek);
-    console.log('\n--- Message blocks to send ---\n');
-    console.log(JSON.stringify(blocks, null, 2));
+    const message = buildSlackMessage(filteredSentThisWeek, filteredQueueThisWeek, filteredQueueNextWeek);
+    console.log('\n--- Message to send ---\n');
+    console.log(message);
     console.log('\n--- End message ---\n');
-
-    await sendToSlack(blocks);
+    
+    await sendToSlack(message);
     console.log('✅ Message sent to Slack successfully!');
     
   } catch (error) {
