@@ -11,7 +11,7 @@ export const CONFIG = {
   BUFFER_API_URL: 'https://api.buffer.com',
   
   // Message formatting
-  POST_TEXT_MAX_LENGTH: 100,
+  POST_TEXT_MAX_LENGTH: 200,
   DATE_FORMAT: {
     weekday: 'long',
     year: 'numeric',

@@ -255,6 +255,17 @@ function buildSlackMessage(sentThisWeek, queueThisWeek, queueNextWeek) {
         text: "There's nothing scheduled for the rest of this week."
       }
     });
+
+    // Show streak warning if nothing sent this week either
+    if (sentThisWeek.length === 0) {
+      blocks.push({
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: `Your streak is at risk! Explore your <${CONFIG.CREATE_SPACE_URL}|idea bank> and schedule something to stay on track.`
+        }
+      });
+    }
   }
 
   // Section 3: Posts in queue for next week
